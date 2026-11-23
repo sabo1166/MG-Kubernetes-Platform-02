@@ -1,0 +1,20 @@
+# Later stage. Requires an Ingress controller (e.g. ingress-nginx) installed in the
+# cluster; none is assumed. Not needed while using the frontend NodePort.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mg-platform
+  namespace: mg-platform
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: mg-platform.example.com # replace with your hostname
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

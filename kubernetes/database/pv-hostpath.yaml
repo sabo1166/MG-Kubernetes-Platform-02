@@ -1,0 +1,25 @@
+# Learning-only static volume. Data is stored on ONE worker node's disk and is lost
+# if that node is replaced. Pin the node by editing the nodeAffinity value below
+# (kubectl get nodes --show-labels) so MySQL always lands where the data is.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mysql-data-pv
+spec:
+  storageClassName: mg-manual
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /data/mg-platform/mysql
+    type: DirectoryOrCreate
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - REPLACE_WITH_WORKER_NODE_NAME

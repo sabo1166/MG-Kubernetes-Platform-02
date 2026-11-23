@@ -1,0 +1,19 @@
+# Mirrors app/database/init.sql. Keep the two in sync.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-init
+  namespace: mg-platform
+data:
+  init.sql: |
+    CREATE TABLE IF NOT EXISTS records (
+      id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      title       VARCHAR(120) NOT NULL,
+      description VARCHAR(1000) NOT NULL DEFAULT '',
+      created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_records_created_at (created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+    INSERT INTO records (title, description) VALUES
+      ('Welcome', 'First record seeded by init.sql');

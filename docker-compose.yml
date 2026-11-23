@@ -1,0 +1,56 @@
+services:
+  db:
+    image: mysql:8.4.3
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?set in .env}
+      MYSQL_USER: ${MYSQL_USER:?set in .env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set in .env}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./app/database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks: [backend-net]
+    # No published ports: MySQL is reachable only on the internal network.
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  backend:
+    build: ./app/backend
+    image: mg-platform-api:local
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: ${MYSQL_DATABASE}
+      DB_USER: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [backend-net, frontend-net]
+
+  frontend:
+    build: ./app/frontend
+    image: mg-platform-frontend:local
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://backend:8080
+    ports:
+      - "${FRONTEND_PORT:-8081}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [frontend-net]
+
+networks:
+  backend-net:
+  frontend-net:
+
+volumes:
+  mysql-data:

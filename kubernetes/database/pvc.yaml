@@ -1,0 +1,16 @@
+# kubeadm clusters have NO default StorageClass. This PVC binds to the static
+# hostPath PV in pv-hostpath.yaml (learning only: data lives on one node).
+# For anything else, install a provisioner (e.g. local-path-provisioner or the
+# AWS EBS CSI driver) and change storageClassName accordingly. See docs/deployment-guide.md.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-data
+  namespace: mg-platform
+spec:
+  storageClassName: mg-manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi

@@ -1,0 +1,21 @@
+# Application availability alerts, picked up by the kube-prometheus-stack operator.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mg-platform-availability
+  namespace: monitoring
+spec:
+  groups:
+    - name: mg-platform.availability
+      rules:
+        - alert: MgPlatformDeploymentUnavailable
+          expr: kube_deployment_status_replicas_available{namespace="mg-platform"} < kube_deployment_spec_replicas{namespace="mg-platform"}
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ $labels.deployment }} has fewer available replicas than desired"
+        - alert: MgPlatformPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="mg-platform"}[15m]) > 3
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ $labels.pod }} is restarting repeatedly"

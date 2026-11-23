@@ -1,0 +1,40 @@
+{
+  "title": "MG Platform Overview",
+  "uid": "mg-platform-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Pods Running (mg-platform)",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+      "targets": [{ "expr": "sum(kube_pod_status_phase{namespace=\"mg-platform\",phase=\"Running\"})" }]
+    },
+    {
+      "id": 2, "type": "stat", "title": "Deployments fully available",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
+      "targets": [{ "expr": "count(kube_deployment_status_replicas_available{namespace=\"mg-platform\"} == kube_deployment_spec_replicas{namespace=\"mg-platform\"})" }]
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "Pod CPU (cores)",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 8 },
+      "targets": [{ "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"mg-platform\",container!=\"\"}[5m]))", "legendFormat": "{{pod}}" }]
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Pod memory (bytes)",
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 8 },
+      "targets": [{ "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"mg-platform\",container!=\"\"})", "legendFormat": "{{pod}}" }]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Node CPU usage %",
+      "gridPos": { "x": 0, "y": 13, "w": 12, "h": 8 },
+      "targets": [{ "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)", "legendFormat": "{{instance}}" }]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Node memory used %",
+      "gridPos": { "x": 12, "y": 13, "w": 12, "h": 8 },
+      "targets": [{ "expr": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)", "legendFormat": "{{instance}}" }]
+    }
+  ]
+}

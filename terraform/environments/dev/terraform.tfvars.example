@@ -1,0 +1,5 @@
+aws_region               = "us-east-1"
+project_name             = "mg-k8s-platform-02"
+environment              = "dev"
+frontend_repository_name = "mg-k8s-platform-02-frontend"
+backend_repository_name  = "mg-k8s-platform-02-api"

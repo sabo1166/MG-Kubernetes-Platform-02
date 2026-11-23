@@ -1,0 +1,43 @@
+# Helm values for kube-prometheus-stack (Prometheus + Alertmanager + node-exporter +
+# kube-state-metrics + Grafana). Sized for a small kubeadm learning cluster.
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    # No default StorageClass on kubeadm: data is ephemeral unless you add storage.
+    # Uncomment once a StorageClass exists:
+    # storageSpec:
+    #   volumeClaimTemplate:
+    #     spec:
+    #       storageClassName: <your-storage-class>
+    #       resources: { requests: { storage: 10Gi } }
+    resources:
+      requests: { cpu: 200m, memory: 512Mi }
+      limits: { memory: 1Gi }
+    # Discover ServiceMonitors/rules from any namespace, not only this release.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+
+alertmanager:
+  enabled: true
+
+grafana:
+  enabled: true
+  service:
+    type: NodePort
+    nodePort: 30300
+  # Admin password: create the secret first (see monitoring/README.md), never put it here.
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: mg-platform
+          folder: MG Platform
+          type: file
+          options:
+            path: /var/lib/grafana/dashboards/mg-platform
+  dashboardsConfigMaps:
+    mg-platform: mg-platform-dashboard

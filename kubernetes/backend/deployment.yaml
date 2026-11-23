@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: mg-platform
+  labels:
+    app: backend
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      imagePullSecrets:
+        - name: ecr-pull-secret
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: backend
+          # Replace <AWS_ACCOUNT_ID> and the tag (commit SHA) before applying.
+          image: <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/mg-k8s-platform-02-api:REPLACE_TAG
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: DB_HOST
+              valueFrom: { configMapKeyRef: { name: mg-platform-config, key: DB_HOST } }
+            - name: DB_PORT
+              valueFrom: { configMapKeyRef: { name: mg-platform-config, key: DB_PORT } }
+            - name: DB_NAME
+              valueFrom: { configMapKeyRef: { name: mg-platform-config, key: DB_NAME } }
+            - name: DB_USER
+              valueFrom: { configMapKeyRef: { name: mg-platform-config, key: DB_USER } }
+            - name: LOG_LEVEL
+              valueFrom: { configMapKeyRef: { name: mg-platform-config, key: LOG_LEVEL } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: mg-platform-db, key: MYSQL_PASSWORD } }
+          readinessProbe:
+            httpGet: { path: /health/db, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
