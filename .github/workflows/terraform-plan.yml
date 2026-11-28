@@ -2,10 +2,10 @@ name: terraform-plan
 
 on:
   pull_request:
-    paths: ["terraform/**", ".github/workflows/terraform-plan.yml"]
+    paths: ["terraform/**", "scripts/verify-tf-backend.sh", ".github/workflows/terraform-plan.yml"]
   push:
     branches: [main]
-    paths: ["terraform/**", ".github/workflows/terraform-plan.yml"]
+    paths: ["terraform/**", "scripts/verify-tf-backend.sh", ".github/workflows/terraform-plan.yml"]
   workflow_dispatch:
 
 # Least privilege: no job needs more than read access to the repository.
