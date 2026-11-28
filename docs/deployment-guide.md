@@ -41,7 +41,26 @@ The frontend is reachable at `http://<node-ip>:30080` through the NodePort (open
 
 ## 4. Terraform state
 
-State is currently **local** (`terraform/environments/dev/versions.tf`) and gitignored. There is no remote backend configured. Because of this, the CI `plan` always starts from empty state. A remote S3 backend has been discussed but is **not** configured yet, so there is no verified bucket name to document here. Do not commit state files.
+State is **remote** in S3 (`terraform/environments/dev/backend.tf`):
+
+| Setting | Value |
+|---|---|
+| Bucket | `mg-k8s-platform-02-terraform-state-2026` (repository variable `TF_STATE_BUCKET`) |
+| Key | `mg-k8s-platform-02/terraform.tfstate` |
+| Region | `us-east-1` |
+| Encryption | `encrypt = true`, bucket default SSE-S3 |
+| Locking | `use_lockfile = true` (native S3 lock file, Terraform >= 1.10, no DynamoDB) |
+
+Every `terraform init` in CI is followed by `scripts/verify-tf-backend.sh`, which fails the job if the backend is not exactly this S3 location, if locking or encryption is off, if a local `terraform.tfstate` exists, or if the remote state cannot be read.
+
+Apply runs only on pushes to `main`, only when the repository variable `TF_REMOTE_STATE_VERIFIED` is `true`, and only after approval on the `project-1` environment. Apply uses the saved plan from the same run.
+
+Rules:
+
+- Never commit state files (they are gitignored).
+- Never run `terraform init -reconfigure` or `-migrate-state` against this backend without first downloading a copy of the current state object.
+- Keep bucket versioning **enabled** so any state version can be restored.
+- If you ever have a local `terraform.tfstate` with resources in it, migrate it with `terraform init -migrate-state` after backing it up; do not just delete it.
 
 ## 5. Monitoring
 
