@@ -36,8 +36,20 @@ encrypt=$(jq -r '.backend.config.encrypt // false' "$meta")
 [ "$lockfile" = "true" ]             || fail "use_lockfile is not true."
 [ "$encrypt" = "true" ]              || fail "encrypt is not true."
 
-# 3. The remote state must be readable with the CI credentials (read-only call).
-terraform state list >/dev/null || fail "remote state in s3://$EXPECTED_BUCKET/$EXPECTED_KEY is not readable."
+# 3. The remote state must be reachable with the CI credentials (read-only calls).
+#    A missing state object (HTTP 404) is accepted: it only means nothing has been
+#    applied yet, and the first apply will create it. Access errors (403) fail.
+aws s3api head-bucket --bucket "$EXPECTED_BUCKET" >/dev/null \
+  || fail "bucket s3://$EXPECTED_BUCKET is not accessible with the CI credentials."
+if head_err=$(aws s3api head-object --bucket "$EXPECTED_BUCKET" --key "$EXPECTED_KEY" 2>&1 >/dev/null); then
+  terraform state list >/dev/null \
+    || fail "remote state in s3://$EXPECTED_BUCKET/$EXPECTED_KEY exists but is not readable."
+  echo "Remote state object found and readable."
+elif echo "$head_err" | grep -qE '\(404\)|Not Found'; then
+  echo "::notice title=Remote state::No state object yet at s3://$EXPECTED_BUCKET/$EXPECTED_KEY (first run). The first apply will create it."
+else
+  fail "cannot access s3://$EXPECTED_BUCKET/$EXPECTED_KEY: $head_err"
+fi
 
 # 4. Advisory only: state buckets should have versioning so state can be recovered.
 versioning=$(aws s3api get-bucket-versioning --bucket "$EXPECTED_BUCKET" \
