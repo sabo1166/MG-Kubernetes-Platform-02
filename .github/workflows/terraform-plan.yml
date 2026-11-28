@@ -2,10 +2,10 @@ name: terraform-plan
 
 on:
   pull_request:
-    paths: ["terraform/**", ".github/workflows/terraform-plan.yml"]
+    paths: ["terraform/**", "scripts/verify-tf-backend.sh", ".github/workflows/terraform-plan.yml"]
   push:
     branches: [main]
-    paths: ["terraform/**", ".github/workflows/terraform-plan.yml"]
+    paths: ["terraform/**", "scripts/verify-tf-backend.sh", ".github/workflows/terraform-plan.yml"]
   workflow_dispatch:
 
 # Least privilege: no job needs more than read access to the repository.
@@ -15,27 +15,33 @@ permissions:
 env:
   TF_DIR: terraform/environments/dev
   TF_IN_AUTOMATION: "true"
-  # Same Terraform version in every job. NOTE: native S3 locking (use_lockfile)
-  # needs Terraform >= 1.10, so raise this when the S3 backend is introduced.
-  TF_VERSION: "~1.9"
+  # Same Terraform version in every job. Native S3 locking (use_lockfile in
+  # backend.tf) needs Terraform >= 1.10.
+  TF_VERSION: "~1.14"
   # Repository Variable (Settings -> Secrets and variables -> Actions -> Variables).
   # Falls back to the project default region if the variable is not set.
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  # Expected remote state location. Must match terraform/environments/dev/backend.tf;
+  # every init is followed by scripts/verify-tf-backend.sh, which fails on any mismatch.
+  # The bucket comes from the existing repository variable TF_STATE_BUCKET.
+  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+  TF_STATE_KEY: mg-k8s-platform-02/terraform.tfstate
+  TF_STATE_REGION: us-east-1
 
 jobs:
   # ---------------------------------------------------------------- 1. init
   init:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
 
       - name: Configure AWS credentials (static keys from GitHub Secrets)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -45,14 +51,22 @@ jobs:
         run: terraform init -input=false
         working-directory: ${{ env.TF_DIR }}
 
+      - name: Verify remote backend (S3, locking, no local state)
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          EXPECTED_BUCKET: ${{ env.TF_STATE_BUCKET }}
+          EXPECTED_KEY: ${{ env.TF_STATE_KEY }}
+          EXPECTED_REGION: ${{ env.TF_STATE_REGION }}
+        run: bash "$GITHUB_WORKSPACE/scripts/verify-tf-backend.sh"
+
   # ------------------------------------------------------------ 2. validate
   validate:
     needs: init
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
@@ -77,15 +91,15 @@ jobs:
     outputs:
       apply_allowed: ${{ steps.gate.outputs.apply_allowed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
 
       - name: Configure AWS credentials (static keys from GitHub Secrets)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -95,10 +109,20 @@ jobs:
         run: terraform init -input=false
         working-directory: ${{ env.TF_DIR }}
 
-      # Remote-state gate. Apply is only allowed when BOTH are true:
-      #   1. the Terraform code declares an S3 backend with use_lockfile = true, and
-      #   2. the repository variable TF_REMOTE_STATE_VERIFIED is "true" (set by a human
-      #      after the bucket has been created and the backend verified).
+      - name: Verify remote backend (S3, locking, no local state)
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          EXPECTED_BUCKET: ${{ env.TF_STATE_BUCKET }}
+          EXPECTED_KEY: ${{ env.TF_STATE_KEY }}
+          EXPECTED_REGION: ${{ env.TF_STATE_REGION }}
+        run: bash "$GITHUB_WORKSPACE/scripts/verify-tf-backend.sh"
+
+      # Remote-state gate. Apply is only allowed when ALL are true:
+      #   1. the Terraform code declares an S3 backend with use_lockfile = true,
+      #   2. the initialized backend was verified by the previous step (this job
+      #      fails before reaching here if it was not), and
+      #   3. the repository variable TF_REMOTE_STATE_VERIFIED is "true" (set by a human
+      #      after the bucket and backend were verified).
       - name: Remote state gate
         id: gate
         working-directory: ${{ env.TF_DIR }}
@@ -121,7 +145,7 @@ jobs:
 
       # The plan is saved to a file so that apply uses exactly what was reviewed.
       - name: Terraform plan
-        run: terraform plan -input=false -no-color -out=tfplan
+        run: terraform plan -input=false -no-color -lock-timeout=5m -out=tfplan
         working-directory: ${{ env.TF_DIR }}
 
       # Only upload on pushes to main: that is the only case apply can consume it.
@@ -144,14 +168,15 @@ jobs:
       github.ref == 'refs/heads/main' &&
       needs.plan.outputs.apply_allowed == 'true'
     runs-on: ubuntu-latest
-    # Manual approval: configure required reviewers on the "production" environment
-    # (Settings -> Environments). This cannot be verified from the repository.
-    environment: production
+    # Manual approval gate. "project-1" is the environment that exists in this
+    # repository with a required reviewer (verified 2026-11-28). Do not point this at
+    # an environment that does not exist: GitHub would create it WITHOUT protection rules.
+    environment: project-1
     concurrency:
       group: terraform-apply
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Defense in depth: re-check the gate in case the code or variable changed.
       - name: Remote state gate (re-check)
@@ -166,13 +191,13 @@ jobs:
             exit 1
           fi
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
 
       - name: Configure AWS credentials (static keys from GitHub Secrets)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -181,6 +206,14 @@ jobs:
       - name: Terraform init
         run: terraform init -input=false
         working-directory: ${{ env.TF_DIR }}
+
+      - name: Verify remote backend (S3, locking, no local state)
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          EXPECTED_BUCKET: ${{ env.TF_STATE_BUCKET }}
+          EXPECTED_KEY: ${{ env.TF_STATE_KEY }}
+          EXPECTED_REGION: ${{ env.TF_STATE_REGION }}
+        run: bash "$GITHUB_WORKSPACE/scripts/verify-tf-backend.sh"
 
       # The exact plan produced by the plan job in this same run.
       - name: Download plan artifact
@@ -192,5 +225,5 @@ jobs:
       # No new plan is generated here. Terraform rejects a stale saved plan
       # if the state changed since it was created.
       - name: Terraform apply (saved plan)
-        run: terraform apply -input=false -auto-approve tfplan
+        run: terraform apply -input=false -lock-timeout=5m -auto-approve tfplan
         working-directory: ${{ env.TF_DIR }}
